@@ -1,0 +1,21 @@
+server:
+  port: 8080
+
+message-handler:
+  poolSize: 20
+  scanRate: 100
+  messageCountOnce: 200
+  receiveDir: /Users/zhaopei/Desktop/1/diff/j
+  receiveFilePattern: '*.xml'
+  hostName: 172.16.33.55
+  port: 1800
+  queueManager: DFWTINTRA
+  channel: JAVA.CHANNEL
+  ccsid: 1208
+  queueName: DXP_TO_GGFW
+  minConcurrency: 1
+  maxConcurrency: 2
+  sessionCacheSize: 100
+
+logging:
+  config: classpath:logback-spring.xml
