@@ -20,11 +20,8 @@ import org.springframework.integration.core.MessageSource;
 import org.springframework.integration.file.FileReadingMessageSource;
 import org.springframework.integration.file.filters.SimplePatternFileListFilter;
 import org.springframework.integration.file.transformer.FileToByteArrayTransformer;
-import org.springframework.integration.jms.JmsHeaderMapper;
 import org.springframework.jms.connection.CachingConnectionFactory;
 import org.springframework.jms.core.JmsTemplate;
-import org.springframework.jms.core.MessagePostProcessor;
-import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 
 import javax.jms.ConnectionFactory;
@@ -41,6 +38,15 @@ public class IntegrationConfiguration {
 
     @Autowired
     private MessageHandlerProp messageHandlerProp;
+
+    @Autowired
+    private MQQueue mqQueue;
+
+    @Autowired
+    private JmsTemplate jmsTemplate;
+
+    @Autowired
+    private ExecutorService executorService;
 
     @Bean(ChannelConstant.CHANNEL_RECEIVE)
     public MessageChannel receiveChannel() {
@@ -102,22 +108,11 @@ public class IntegrationConfiguration {
         return queue;
     }
 
-    @Bean
-    public JmsTemplate jmsTemplate() {
-        JmsTemplate jmsTemplate = new JmsTemplate();
-        try {
-            jmsTemplate.setConnectionFactory(connectionFactory());
-        } catch (Exception e) {
-            logger.error("init connection factory error", e);
-        }
-        return jmsTemplate;
-    }
-
     @ServiceActivator(inputChannel = ChannelConstant.CHANNEL_BYTE_RECEIVE)
     public void sendByteMessage(byte[] bytes) {
-        taskExecutor().execute(() -> {
+        this.executorService.execute(() -> {
             long startTime = System.nanoTime();
-            jmsTemplate().convertAndSend(mqQueue(), bytes);
+            this.jmsTemplate.convertAndSend(this.mqQueue, bytes);
             logger.info("send message use[" + ((double)(System.nanoTime() - startTime) / 1000000.0) + "]ms");
         });
     }
