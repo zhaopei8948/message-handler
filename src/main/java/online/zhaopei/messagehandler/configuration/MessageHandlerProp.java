@@ -11,6 +11,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class MessageHandlerProp {
 
+    private Integer cacheSize;
+
     private Integer poolSize;
 
     private Integer scanRate;

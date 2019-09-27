@@ -24,17 +24,22 @@ import org.springframework.jms.connection.CachingConnectionFactory;
 import org.springframework.jms.core.JmsTemplate;
 import org.springframework.messaging.MessageChannel;
 
+import javax.annotation.PostConstruct;
 import javax.jms.ConnectionFactory;
 import javax.jms.JMSException;
 import java.io.File;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 
 @Configuration
 @EnableIntegration
 public class IntegrationConfiguration {
 
     private static final Log logger = LogFactory.getLog(IntegrationConfiguration.class);
+
+    private static BlockingQueue<Integer> CACHE_QUEUE;
 
     @Autowired
     private MessageHandlerProp messageHandlerProp;
@@ -47,6 +52,11 @@ public class IntegrationConfiguration {
 
     @Autowired
     private ExecutorService executorService;
+
+    @PostConstruct
+    public void initProp() {
+        CACHE_QUEUE = new LinkedBlockingQueue<Integer>(this.messageHandlerProp.getCacheSize());
+    }
 
     @Bean(ChannelConstant.CHANNEL_RECEIVE)
     public MessageChannel receiveChannel() {
@@ -110,10 +120,17 @@ public class IntegrationConfiguration {
 
     @ServiceActivator(inputChannel = ChannelConstant.CHANNEL_BYTE_RECEIVE)
     public void sendByteMessage(byte[] bytes) {
+        try {
+            CACHE_QUEUE.put(1);
+        } catch (InterruptedException e) {
+            logger.error("cache put error", e);
+        }
         this.executorService.execute(() -> {
             long startTime = System.nanoTime();
+            CACHE_QUEUE.poll();
             this.jmsTemplate.convertAndSend(this.mqQueue, bytes);
-            logger.info("send message use[" + ((double)(System.nanoTime() - startTime) / 1000000.0) + "]ms");
+            logger.info("cache size [" + CACHE_QUEUE.size() + "] send message use["
+                    + ((double)(System.nanoTime() - startTime) / 1000000.0) + "]ms");
         });
     }
 }

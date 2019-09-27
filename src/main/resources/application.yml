@@ -2,6 +2,7 @@ server:
   port: 8080
 
 message-handler:
+  cacheSize: 2000
   poolSize: 20
   scanRate: 100
   messageCountOnce: 200
