@@ -3,13 +3,17 @@ package online.zhaopei.messagehandler.integration;
 import com.ibm.mq.jms.MQQueue;
 import com.ibm.mq.jms.MQQueueConnectionFactory;
 import com.ibm.msg.client.wmq.WMQConstants;
+import online.zhaopei.messagehandler.configuration.MessageHandlerSecondaryProp;
 import online.zhaopei.messagehandler.configuration.MessageHandlerProp;
 import online.zhaopei.messagehandler.constant.ChannelConstant;
+import online.zhaopei.messagehandler.utils.CommonUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.integration.annotation.InboundChannelAdapter;
 import org.springframework.integration.annotation.Poller;
 import org.springframework.integration.annotation.ServiceActivator;
@@ -45,10 +49,21 @@ public class IntegrationConfiguration {
     private MessageHandlerProp messageHandlerProp;
 
     @Autowired
+    private MessageHandlerSecondaryProp messageHandlerSecondaryProp;
+
+    @Autowired
     private MQQueue mqQueue;
 
     @Autowired
+    @Qualifier("secondaryMqQueue")
+    private MQQueue secondaryMqQueue;
+
+    @Autowired
     private JmsTemplate jmsTemplate;
+
+    @Autowired
+    @Qualifier("secondaryJmsTemplate")
+    private JmsTemplate secondaryJmsTemplate;
 
     @Autowired
     private ExecutorService executorService;
@@ -90,7 +105,23 @@ public class IntegrationConfiguration {
         return fileToByteArrayTransformer;
     }
 
+    @Bean("secondaryConnectionFactory")
+    public ConnectionFactory secondaryConnectionFactory() throws Exception {
+        CachingConnectionFactory cachingConnectionFactory = new CachingConnectionFactory();
+        cachingConnectionFactory.setSessionCacheSize(this.messageHandlerSecondaryProp.getSessionCacheSize());
+        MQQueueConnectionFactory mqQueueConnectionFactory = new MQQueueConnectionFactory();
+        mqQueueConnectionFactory.setHostName(this.messageHandlerSecondaryProp.getHostName());
+        mqQueueConnectionFactory.setPort(this.messageHandlerSecondaryProp.getPort());
+        mqQueueConnectionFactory.setQueueManager(this.messageHandlerSecondaryProp.getQueueManager());
+        mqQueueConnectionFactory.setChannel(this.messageHandlerSecondaryProp.getChannel());
+        mqQueueConnectionFactory.setCCSID(this.messageHandlerSecondaryProp.getCcsid());
+        mqQueueConnectionFactory.setTransportType(WMQConstants.WMQ_CM_CLIENT);
+        cachingConnectionFactory.setTargetConnectionFactory(mqQueueConnectionFactory);
+        return cachingConnectionFactory;
+    }
+
     @Bean
+    @Primary
     public ConnectionFactory connectionFactory() throws Exception {
         CachingConnectionFactory cachingConnectionFactory = new CachingConnectionFactory();
         cachingConnectionFactory.setSessionCacheSize(this.messageHandlerProp.getSessionCacheSize());
@@ -105,13 +136,41 @@ public class IntegrationConfiguration {
         return cachingConnectionFactory;
     }
 
+
     @Bean
+    @Primary
+    public JmsTemplate JmsTemplate(ConnectionFactory connectionFactory) {
+        JmsTemplate jmsTemplate = new JmsTemplate(connectionFactory);
+        return jmsTemplate;
+    }
+
+    @Bean("secondaryJmsTemplate")
+    public JmsTemplate secondaryJmsTemplate(@Qualifier("secondaryConnectionFactory") ConnectionFactory connectionFactory) {
+        JmsTemplate jmsTemplate = new JmsTemplate(connectionFactory);
+        return jmsTemplate;
+    }
+
+    @Bean
+    @Primary
     public MQQueue mqQueue() {
         MQQueue queue = new MQQueue();
         try {
             queue.setTargetClient(WMQConstants.WMQ_CLIENT_NONJMS_MQ);
             queue.setCCSID(this.messageHandlerProp.getCcsid());
             queue.setBaseQueueName(this.messageHandlerProp.getQueueName());
+        } catch (JMSException e) {
+            logger.error("init mqqueue error", e);
+        }
+        return queue;
+    }
+
+    @Bean("secondaryMqQueue")
+    public MQQueue secondaryMqQueue() {
+        MQQueue queue = new MQQueue();
+        try {
+            queue.setTargetClient(WMQConstants.WMQ_CLIENT_NONJMS_MQ);
+            queue.setCCSID(this.messageHandlerSecondaryProp.getCcsid());
+            queue.setBaseQueueName(this.messageHandlerSecondaryProp.getQueueName());
         } catch (JMSException e) {
             logger.error("init mqqueue error", e);
         }
@@ -128,8 +187,18 @@ public class IntegrationConfiguration {
         this.executorService.execute(() -> {
             long startTime = System.nanoTime();
             CACHE_QUEUE.poll();
-            this.jmsTemplate.convertAndSend(this.mqQueue, bytes);
-            logger.info("cache size [" + CACHE_QUEUE.size() + "] send message use["
+            if (1 == this.messageHandlerProp.getForwardType()) {
+                this.jmsTemplate.convertAndSend(this.mqQueue, bytes);
+            } else if(2 == this.messageHandlerProp.getForwardType()) {
+                this.secondaryJmsTemplate.convertAndSend(this.secondaryMqQueue, bytes);
+            } else if (3 == this.messageHandlerProp.getForwardType()) {
+                if (0 == CommonUtils.getRandomIndex(2)) {
+                    this.jmsTemplate.convertAndSend(this.mqQueue, bytes);
+                } else {
+                    this.secondaryJmsTemplate.convertAndSend(this.secondaryMqQueue, bytes);
+                }
+            }
+            logger.info("forwardType: [" + this.messageHandlerProp.getForwardType() + "] cache size [" + CACHE_QUEUE.size() + "] send message use["
                     + ((double)(System.nanoTime() - startTime) / 1000000.0) + "]ms");
         });
     }

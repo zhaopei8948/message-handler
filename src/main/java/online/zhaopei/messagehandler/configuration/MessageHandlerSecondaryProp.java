@@ -7,21 +7,9 @@ import org.springframework.stereotype.Component;
 
 @Setter
 @Getter
-@ConfigurationProperties(prefix = "message-handler")
+@ConfigurationProperties(prefix = "message-handler.secondary")
 @Component
-public class MessageHandlerProp {
-
-    private Integer cacheSize;
-
-    private Integer poolSize;
-
-    private Integer scanRate;
-
-    private Integer messageCountOnce;
-
-    private String receiveDir;
-
-    private String receiveFilePattern;
+public class MessageHandlerSecondaryProp {
 
     private String hostName;
 
@@ -40,6 +28,4 @@ public class MessageHandlerProp {
     private Integer maxConcurrency;
 
     private Integer sessionCacheSize;
-
-    private Integer forwardType;
 }
